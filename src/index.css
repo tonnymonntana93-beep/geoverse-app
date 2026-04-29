@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .pixel-border {
+    box-shadow: 
+      inset -4px -4px 0px 0px rgba(0,0,0,0.5),
+      inset 4px 4px 0px 0px rgba(255,255,255,0.2);
+    border: 4px solid #4a3b69;
+  }
+  .neon-text {
+    text-shadow: 0 0 10px #00f3ff, 0 0 20px #00f3ff;
+  }
+}
