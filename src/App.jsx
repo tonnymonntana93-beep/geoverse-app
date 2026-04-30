@@ -1,217 +1,132 @@
-import React, { useState, useEffect } from 'react';
-import { User, Map as MapIcon, Globe, EyeOff, Coins, ShieldAlert, Navigation } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import mapboxgl from 'mapbox-gl';
 import { Geolocation } from '@capacitor/geolocation';
 import { toast, Toaster } from 'sonner';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
+import { 
+  Compass, Coins, User, Shield, Ghost, 
+  Map as MapIcon, Zap, MessageCircle, Settings 
+} from 'lucide-react';
 
-// --- CUSTOMOWE IKONY PIXEL-ART DLA MAPY ---
-const userIcon = L.divIcon({
-  className: 'custom-icon',
-  html: `<div class="w-6 h-6 bg-geo-neon-blue rounded-full border-2 border-white shadow-[0_0_15px_#00f3ff] animate-pulse flex items-center justify-center"><div class="w-2 h-2 bg-white rounded-full"></div></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12]
-});
-
-const getNodeIcon = (type) => L.divIcon({
-  className: 'custom-icon',
-  html: `<div class="w-6 h-6 border-2 border-black shadow-[2px_2px_0_rgba(0,0,0,1)] ${type === 'HANDEL' ? 'bg-orange-500' : 'bg-geo-neon-purple'} hover:scale-110 transition-transform"></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12]
-});
-
-// --- KOMPONENT CENTRUJĄCY MAPĘ NA BOHATERZE ---
-const MapController = ({ center }) => {
-  const map = useMap();
-  useEffect(() => {
-    if (center) map.flyTo(center, 16, { animate: true, duration: 1.5 });
-  }, [center, map]);
-  return null;
-};
+// TWOJE API KEY MAPBOX
+mapboxgl.accessToken = 'Pk.eyJ1IjoiYWRvbmlzOTIiLCJhIjoiY21rNGkxZ3BtMDZoZTNlcjJ5dDhoaTdrbCJ9.Fk1LHVOLPIhapC6WZR4iBw';
 
 const App = () => {
-  const [view, setView] = useState('menu'); 
-  const [ghostMode, setGhostMode] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('TOWARZYSKI');
-  const [selectedUser, setSelectedUser] = useState(null);
-  
-  // Stan prawdziwego GPS
+  const mapContainer = useRef(null);
+  const map = useRef(null);
   const [userPos, setUserPos] = useState(null);
-  const [mapNodes, setMapNodes] = useState([]);
+  const [view, setView] = useState('map'); // 'map', 'profile', 'wallet'
+  const [ghostMode, setGhostMode] = useState(false);
+  const [balance, setBalance] = useState(1250);
 
-  // --- LOGIKA LOKALIZACJI W CZASIE RZECZYWISTYM ---
+  // Inicjalizacja Mapy
   useEffect(() => {
-    const startGPS = async () => {
-      try {
-        await Geolocation.requestPermissions();
-        Geolocation.watchPosition({ enableHighAccuracy: true }, (pos) => {
-          if (pos) {
-            const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            setUserPos(newPos);
-            
-            // Generujemy okoliczne punkty tylko raz, opierając się na Twoim GPS
-            setMapNodes(prev => prev.length === 0 ? [
-              { id: 1, name: 'Lokalny Partner', status: 'Zniżka 10%', type: 'HANDEL', lat: newPos.lat + 0.002, lng: newPos.lng + 0.001, rep: 5 },
-              { id: 2, name: 'Odkrywca_99', status: 'Szukam gildii', type: 'TOWARZYSKI', lat: newPos.lat - 0.001, lng: newPos.lng - 0.002, rep: 3 },
-              { id: 3, name: 'Złoty Quest', status: 'Nagroda 500 GV', type: 'USLUGI', lat: newPos.lat + 0.001, lng: newPos.lng + 0.003, rep: 4 },
-            ] : prev);
-          }
-        });
-      } catch (e) {
-        toast.error("Błąd GPS. Upewnij się, że lokalizacja jest włączona.");
+    if (map.current) return; 
+
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/navigation-night-v1', // Profesjonalny Dark Mode
+      center: [19.2150, 50.0413], // Start w Oświęcimiu
+      zoom: 15,
+      pitch: 45, // Efekt 3D
+      bearing: -17
+    });
+
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    // Pobieranie lokalizacji i aktualizacja pozycji gracza
+    const watchId = Geolocation.watchPosition({ enableHighAccuracy: true }, (pos) => {
+      if (pos) {
+        const { latitude, longitude } = pos.coords;
+        setUserPos([longitude, latitude]);
+        
+        if (map.current) {
+          map.current.flyTo({ center: [longitude, latitude], speed: 0.8 });
+          updateUserMarker(longitude, latitude);
+        }
       }
-    };
-    startGPS();
+    });
+
+    return () => Geolocation.clearWatch({ id: watchId });
   }, []);
 
-  const toggleGhostMode = () => {
-    setGhostMode(!ghostMode);
-    toast(ghostMode ? "Jesteś widoczny na mapie" : "Tryb Ducha: Ukryto Twoją pozycję", {
-      style: { fontFamily: '"Press Start 2P"', fontSize: '10px' }
-    });
+  const updateUserMarker = (lng, lat) => {
+    // Tworzenie/Aktualizacja neonowego markera gracza
+    const el = document.getElementById('user-marker') || document.createElement('div');
+    el.id = 'user-marker';
+    el.className = `w-8 h-8 rounded-full border-4 border-white shadow-[0_0_20px_#00f3ff] bg-[#00f3ff] transition-all duration-500 ${ghostMode ? 'opacity-30' : 'opacity-100'}`;
+    
+    new mapboxgl.Marker(el)
+      .setLngLat([lng, lat])
+      .addTo(map.current);
   };
 
-  // --- WIDOK MENU GŁÓWNEGO ---
-  if (view === 'menu') {
-    return (
-      <div className="h-screen bg-geo-bg text-white font-pixel flex flex-col items-center p-4 overflow-y-auto">
-        <Toaster richColors />
-        
-        <div className="mt-8 mb-6 text-center">
-          <h1 className="text-4xl text-transparent bg-clip-text bg-gradient-to-r from-geo-neon-blue to-geo-neon-purple neon-text mb-2">GEOVERSE</h1>
-          <p className="text-[10px] tracking-widest text-gray-400">TWOJE MIASTO, TWOJA GRA.</p>
-        </div>
-
-        <div className="w-full h-64 bg-geo-panel pixel-border rounded-lg relative overflow-hidden mb-6 group flex items-center justify-center">
-          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
-          
-          {userPos ? (
-            <div className="z-10 text-center">
-              <Navigation className="text-geo-neon-blue animate-pulse mx-auto mb-2" size={40} />
-              <p className="text-[10px] text-geo-neon-blue mt-2">GPS AKTYWNY</p>
-              <p className="text-[8px] text-white mt-1">{userPos.lat.toFixed(4)}, {userPos.lng.toFixed(4)}</p>
-            </div>
-          ) : (
-            <p className="text-[10px] text-gray-400 z-10 animate-pulse">ŁĄCZENIE Z SATELITĄ...</p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 w-full mb-8">
-          <button onClick={() => setView('map')} className="bg-purple-900 text-[10px] py-4 pixel-border active:scale-95 transition-transform text-geo-neon-blue">GRAJ!</button>
-          <button className="bg-purple-900 text-[10px] py-4 pixel-border active:scale-95 transition-transform">KONTO</button>
-          <button className="bg-purple-900 text-[10px] py-4 pixel-border active:scale-95 transition-transform">EKWIPUNEK</button>
-          <button className="bg-purple-900 text-[10px] py-4 pixel-border active:scale-95 transition-transform">USTAWIENIA</button>
-        </div>
-
-        <div className="w-full">
-          <p className="text-[10px] mb-3 text-geo-neon-blue">FILTRY</p>
-          <div className="grid grid-cols-2 gap-2 mb-6">
-            {['HANDEL', 'TOWARZYSKI', 'USLUGI', 'BAMICI'].map(f => (
-              <button key={f} onClick={() => setActiveFilter(f)} 
-                className={`text-[8px] py-3 pixel-border flex items-center justify-center gap-2 ${activeFilter === f ? 'bg-geo-neon-blue text-black' : 'bg-geo-panel text-gray-400'}`}>
-                {f}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex justify-between items-center mt-auto">
-            <button onClick={toggleGhostMode} className={`text-[8px] py-3 px-4 pixel-border flex items-center gap-2 ${ghostMode ? 'bg-red-900' : 'bg-gray-800'}`}>
-              <EyeOff size={12} /> TRYB DUCHA
-            </button>
-            <div className="flex flex-col items-center cursor-pointer" onClick={() => setView('map')}>
-              <Globe size={24} className="text-gray-400 mb-1" />
-              <span className="text-[8px] text-gray-400">MAPA ŚWIATA</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- WIDOK PRAWDZIWEJ MAPY ---
   return (
-    <div className="h-screen bg-[#1a1025] text-white font-pixel flex flex-col relative overflow-hidden">
-      <Toaster richColors />
-      
-      {/* HUD: Górny Pasek (Nad Mapą) */}
-      <div className="absolute top-0 left-0 right-0 p-4 bg-geo-panel/90 backdrop-blur-md flex justify-between items-center z-[1000] border-b-4 border-black">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('menu')}>
-          <div className="bg-geo-neon-blue text-black p-1 pixel-border text-[8px]">MENU</div>
+    <div className="h-screen w-screen bg-[#050505] flex flex-col overflow-hidden select-none">
+      <Toaster position="top-center" richColors theme="dark" />
+
+      {/* HUD GÓRNY */}
+      <div className="absolute top-0 left-0 right-0 z-50 p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+        <div className="flex items-center gap-3 pointer-events-auto">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 border border-white/20 flex items-center justify-center shadow-lg shadow-blue-900/40">
+            <User className="text-white" size={24} />
+          </div>
+          <div>
+            <h2 className="text-[10px] font-black tracking-tighter text-blue-400 font-pixel">ADONIS_PRO</h2>
+            <p className="text-[12px] font-bold">Level 12</p>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[10px] flex items-center gap-1 text-yellow-400"><Coins size={12}/> 1010</span>
-          <span className="text-[10px] bg-geo-neon-purple px-2 py-1 border-2 border-black">Lvl 80</span>
+
+        <div className="flex gap-2 pointer-events-auto">
+          <div className="px-3 py-2 bg-black/60 border border-white/10 rounded-full flex items-center gap-2 backdrop-blur-md">
+            <Coins className="text-yellow-400" size={16} />
+            <span className="font-bold text-sm tracking-tight">{balance} GV</span>
+          </div>
         </div>
       </div>
 
-      {/* PRAWDZIWA MAPA LEAFLET */}
-      <div className="flex-1 w-full h-full z-[0]">
-        {userPos ? (
-          <MapContainer 
-            center={[userPos.lat, userPos.lng]} 
-            zoom={16} 
-            zoomControl={false}
-            className="w-full h-full"
-            onClick={() => setSelectedUser(null)}
+      {/* GŁÓWNY WIDOK MAPY */}
+      <div ref={mapContainer} className="flex-1 w-full" />
+
+      {/* INTERFEJS AKCJI (DOLNY PANEL) */}
+      <div className="absolute bottom-8 left-4 right-4 z-50 flex flex-col gap-4 pointer-events-none">
+        
+        {/* Szybkie skróty nad barem */}
+        <div className="flex justify-between items-end px-2">
+          <button 
+            onClick={() => setGhostMode(!ghostMode)}
+            className={`p-4 rounded-2xl border backdrop-blur-xl transition-all pointer-events-auto ${ghostMode ? 'bg-red-500/20 border-red-500 text-red-500' : 'bg-black/40 border-white/10 text-white'}`}
           >
-            <MapController center={[userPos.lat, userPos.lng]} />
-            
-            {/* Dark Mode Map Tiles - Cyberpunk Vibe */}
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
-            />
+            {ghostMode ? <Ghost size={24} /> : <Shield size={24} />}
+          </button>
+          
+          <button className="w-16 h-16 bg-blue-600 rounded-full border-4 border-white shadow-[0_0_30px_rgba(37,99,235,0.6)] flex items-center justify-center text-white pointer-events-auto active:scale-90 transition-transform">
+            <Zap size={32} fill="white" />
+          </button>
 
-            {/* Twój Avatar na Mapie */}
-            {!ghostMode && (
-              <Marker position={[userPos.lat, userPos.lng]} icon={userIcon}>
-                <Popup className="font-pixel text-[10px]">To Twoja pozycja!</Popup>
-              </Marker>
-            )}
+          <button className="p-4 rounded-2xl bg-black/40 border border-white/10 text-white backdrop-blur-xl pointer-events-auto">
+            <MessageCircle size={24} />
+          </button>
+        </div>
 
-            {/* Dynamiczne Węzły (Inni gracze / Sklepy) */}
-            {mapNodes.filter(n => n.type === activeFilter || activeFilter === 'TOWARZYSKI').map(node => (
-              <Marker 
-                key={node.id} 
-                position={[node.lat, node.lng]} 
-                icon={getNodeIcon(node.type)}
-                eventHandlers={{ click: () => setSelectedUser(node) }}
-              />
-            ))}
-          </MapContainer>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-geo-bg">
-            <p className="text-[10px] text-geo-neon-blue animate-pulse">ŁĄCZENIE Z SATELITĄ GPS...</p>
-          </div>
-        )}
+        {/* GŁÓWNA NAWIGACJA */}
+        <nav className="h-16 bg-black/80 border border-white/10 rounded-3xl flex justify-around items-center backdrop-blur-2xl pointer-events-auto shadow-2xl">
+          <button onClick={() => setView('map')} className={`flex flex-col items-center ${view === 'map' ? 'text-blue-400' : 'text-gray-500'}`}>
+            <MapIcon size={22} />
+            <span className="text-[9px] mt-1 font-bold tracking-widest uppercase">Eksploruj</span>
+          </button>
+          <button className="flex flex-col items-center text-gray-500">
+            <Compass size={22} />
+            <span className="text-[9px] mt-1 font-bold tracking-widest uppercase">Questy</span>
+          </button>
+          <button className="flex flex-col items-center text-gray-500">
+            <Settings size={22} />
+            <span className="text-[9px] mt-1 font-bold tracking-widest uppercase">Giełda</span>
+          </button>
+        </nav>
       </div>
 
-      {/* INTERFEJS: Karta Wybranego Węzła (Nad Mapą) */}
-      <div className="absolute bottom-4 left-4 right-4 z-[1000] pointer-events-none">
-        {selectedUser && (
-          <div className="bg-geo-panel pixel-border p-4 animate-in slide-in-from-bottom-10 pointer-events-auto">
-            <div className="flex gap-4 mb-4">
-              <div className="w-16 h-16 bg-blue-900 border-2 border-geo-neon-blue flex items-center justify-center">
-                 <User className="text-geo-neon-blue" size={32} />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[10px] text-geo-neon-blue mb-2">NAZWA: {selectedUser.name}</h3>
-                <p className="text-[8px] text-gray-300 mb-2">STATUS: {selectedUser.status}</p>
-                <div className="flex gap-1 text-yellow-400">
-                  {[...Array(5)].map((_, i) => <span key={i} className="text-[10px]">{i < selectedUser.rep ? '★' : '☆'}</span>)}
-                </div>
-              </div>
-              <button className="bg-gray-800 text-[8px] px-2 h-8 border-2 border-gray-600 self-end">ZAMKNIJ</button>
-            </div>
-            <div className="flex justify-between gap-2">
-              <button className="flex-1 bg-purple-900 text-[8px] py-2 border-2 border-purple-500">PROFIL</button>
-              <button className="flex-1 bg-geo-neon-blue text-black text-[8px] py-2 border-2 border-black">CZAT</button>
-              <button className="flex-1 bg-purple-900 text-[8px] py-2 border-2 border-purple-500">AKCJA</button>
-              <button className="bg-red-900 text-white text-[8px] px-4 py-2 border-2 border-red-500"><ShieldAlert size={12}/></button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Nakładka skanowania (Cyber Vibe) */}
+      <div className="absolute inset-0 pointer-events-none border-[20px] border-blue-500/5 opacity-20 animate-pulse"></div>
     </div>
   );
 };
